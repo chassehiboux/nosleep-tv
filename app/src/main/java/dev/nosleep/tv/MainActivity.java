@@ -3,6 +3,7 @@ package dev.nosleep.tv;
 import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
@@ -18,6 +19,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
+import android.widget.FrameLayout;
 import android.widget.GridView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -42,10 +44,13 @@ public class MainActivity extends Activity {
     private static final int AMBER = Color.rgb(255, 196, 77);
     private static final int DANGER = Color.rgb(255, 107, 107);
 
-    private LinearLayout setupPanel;
+    private LinearLayout setupScreen;
+    private LinearLayout mainScreen;
     private TextView statusBadge;
     private TextView accessibilityStatus;
     private TextView overlayStatus;
+    private TextView accessibilityButton;
+    private TextView overlayButton;
     private TextView selectedCount;
     private TextView updateStatus;
     private TextView installUpdateButton;
@@ -54,6 +59,7 @@ public class MainActivity extends Activity {
     private AppGridAdapter appAdapter;
     private UpdateChecker.ReleaseInfo availableRelease;
     private boolean updateCheckRunning;
+    private boolean setupReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -72,138 +78,161 @@ public class MainActivity extends Activity {
     }
 
     private void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(48), dp(36), dp(48), dp(36));
+        FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BACKGROUND);
         setContentView(root);
 
+        mainScreen = new LinearLayout(this);
+        mainScreen.setOrientation(LinearLayout.VERTICAL);
+        mainScreen.setPadding(dp(40), dp(24), dp(40), dp(28));
+        root.addView(mainScreen, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        buildMainScreen(mainScreen);
+
+        setupScreen = new LinearLayout(this);
+        setupScreen.setGravity(Gravity.CENTER);
+        setupScreen.setPadding(dp(48), dp(36), dp(48), dp(36));
+        root.addView(setupScreen, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        buildSetupScreen(setupScreen);
+    }
+
+    private void buildMainScreen(LinearLayout root) {
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(header, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(88)));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.nosleep_icon_source);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        header.addView(logo, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        header.addView(logo, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.setPadding(dp(18), 0, 0, 0);
+        titleBlock.setPadding(dp(16), 0, dp(12), 0);
         header.addView(titleBlock, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView title = text(getString(R.string.app_full_name), 28, TEXT, Typeface.BOLD);
+        TextView title = text(getString(R.string.app_name), 26, TEXT, Typeface.BOLD);
+        title.setSingleLine(true);
         titleBlock.addView(title);
 
-        TextView subtitle = text(getString(R.string.tagline), 15, MUTED, Typeface.NORMAL);
-        subtitle.setPadding(0, dp(6), 0, 0);
+        TextView subtitle = text(getString(R.string.tagline), 14, MUTED, Typeface.NORMAL);
+        subtitle.setMaxLines(2);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        subtitle.setLineSpacing(dp(1), 1f);
+        subtitle.setPadding(0, dp(3), 0, 0);
         titleBlock.addView(subtitle);
 
-        statusBadge = text("", 14, BACKGROUND, Typeface.BOLD);
-        statusBadge.setGravity(Gravity.CENTER);
-        statusBadge.setPadding(dp(18), dp(10), dp(18), dp(10));
+        statusBadge = badge("");
         header.addView(statusBadge, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Space headerGap = new Space(this);
-        header.addView(headerGap, new LinearLayout.LayoutParams(dp(16), 1));
+        header.addView(headerGap, new LinearLayout.LayoutParams(dp(12), 1));
 
         TextView checkButton = actionButton(getString(R.string.check_updates), false);
         checkButton.setOnClickListener(v -> checkForUpdates(true));
-        header.addView(checkButton, new LinearLayout.LayoutParams(dp(210), dp(52)));
+        header.addView(checkButton, new LinearLayout.LayoutParams(dp(190), dp(48)));
 
-        LinearLayout main = new LinearLayout(this);
-        main.setOrientation(LinearLayout.HORIZONTAL);
-        main.setGravity(Gravity.TOP);
-        root.addView(main, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        LinearLayout side = new LinearLayout(this);
-        side.setOrientation(LinearLayout.VERTICAL);
-        main.addView(side, new LinearLayout.LayoutParams(dp(390),
-                ViewGroup.LayoutParams.MATCH_PARENT));
-
-        setupPanel = panel();
-        side.addView(setupPanel, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        buildSetupPanel(setupPanel);
-
-        Space sideGap = new Space(this);
-        side.addView(sideGap, new LinearLayout.LayoutParams(1, dp(18)));
-
-        LinearLayout updates = panel();
-        side.addView(updates, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        buildUpdatesPanel(updates);
-
-        Space columnGap = new Space(this);
-        main.addView(columnGap, new LinearLayout.LayoutParams(dp(26), 1));
+        LinearLayout updates = new LinearLayout(this);
+        updates.setGravity(Gravity.CENTER_VERTICAL);
+        updates.setOrientation(LinearLayout.HORIZONTAL);
+        updates.setPadding(dp(16), dp(10), dp(16), dp(10));
+        setRoundedBackground(updates, PANEL, Color.TRANSPARENT, dp(8), 0);
+        LinearLayout.LayoutParams updatesParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        updatesParams.setMargins(0, dp(16), 0, dp(16));
+        root.addView(updates, updatesParams);
+        buildUpdatesBar(updates);
 
         LinearLayout appsPanel = panel();
-        main.addView(appsPanel, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        root.addView(appsPanel, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         buildAppsPanel(appsPanel);
     }
 
-    private void buildSetupPanel(LinearLayout panel) {
-        TextView title = text(getString(R.string.setup_title), 21, TEXT, Typeface.BOLD);
-        panel.addView(title);
+    private void buildSetupScreen(LinearLayout root) {
+        LinearLayout card = panel();
+        card.setPadding(dp(30), dp(28), dp(30), dp(28));
+        root.addView(card, new LinearLayout.LayoutParams(dp(720),
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        TextView body = text(getString(R.string.setup_body), 14, MUTED, Typeface.NORMAL);
-        body.setPadding(0, dp(10), 0, dp(18));
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(titleRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.nosleep_icon_source);
+        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        titleRow.addView(logo, new LinearLayout.LayoutParams(dp(64), dp(64)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(18), 0, 0, 0);
+        titleRow.addView(copy, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView title = text(getString(R.string.setup_title), 25, TEXT, Typeface.BOLD);
+        copy.addView(title);
+
+        TextView body = text(getString(R.string.setup_body), 15, MUTED, Typeface.NORMAL);
+        body.setMaxLines(3);
         body.setLineSpacing(dp(2), 1f);
-        panel.addView(body);
+        body.setPadding(0, dp(6), 0, 0);
+        copy.addView(body);
 
         accessibilityStatus = text("", 14, TEXT, Typeface.BOLD);
-        accessibilityStatus.setPadding(0, 0, 0, dp(8));
-        panel.addView(accessibilityStatus);
+        accessibilityStatus.setPadding(0, dp(24), 0, dp(8));
+        card.addView(accessibilityStatus);
 
-        TextView accessibilityButton = actionButton(getString(R.string.open_accessibility), true);
+        accessibilityButton = actionButton(getString(R.string.open_accessibility), true);
         accessibilityButton.setOnClickListener(v ->
                 startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        panel.addView(accessibilityButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        card.addView(accessibilityButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
 
         overlayStatus = text("", 14, TEXT, Typeface.BOLD);
         overlayStatus.setPadding(0, dp(18), 0, dp(8));
-        panel.addView(overlayStatus);
+        card.addView(overlayStatus);
 
-        TextView overlayButton = actionButton(getString(R.string.open_overlay), false);
+        overlayButton = actionButton(getString(R.string.open_overlay), false);
         overlayButton.setOnClickListener(v -> {
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName()));
             startActivity(intent);
         });
-        panel.addView(overlayButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        card.addView(overlayButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
     }
 
-    private void buildUpdatesPanel(LinearLayout panel) {
-        TextView title = text(getString(R.string.updates_title), 21, TEXT, Typeface.BOLD);
-        panel.addView(title);
-
-        updateStatus = text(getString(R.string.checking_updates), 14, MUTED, Typeface.NORMAL);
-        updateStatus.setPadding(0, dp(10), 0, dp(18));
-        updateStatus.setLineSpacing(dp(2), 1f);
-        panel.addView(updateStatus);
+    private void buildUpdatesBar(LinearLayout bar) {
+        updateStatus = text(getString(R.string.checking_updates), 13, MUTED, Typeface.NORMAL);
+        updateStatus.setSingleLine(true);
+        updateStatus.setEllipsize(TextUtils.TruncateAt.END);
+        bar.addView(updateStatus, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         installUpdateButton = actionButton(getString(R.string.install_update), true);
         installUpdateButton.setVisibility(View.GONE);
         installUpdateButton.setOnClickListener(v -> installAvailableUpdate());
-        panel.addView(installUpdateButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        bar.addView(installUpdateButton, new LinearLayout.LayoutParams(dp(190), dp(46)));
 
         Space gap = new Space(this);
-        panel.addView(gap, new LinearLayout.LayoutParams(1, dp(10)));
+        bar.addView(gap, new LinearLayout.LayoutParams(dp(10), 1));
 
         releasePageButton = actionButton(getString(R.string.manual_release), false);
         releasePageButton.setVisibility(View.GONE);
         releasePageButton.setOnClickListener(v -> openReleasePage());
-        panel.addView(releasePageButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50)));
+        bar.addView(releasePageButton, new LinearLayout.LayoutParams(dp(180), dp(46)));
     }
 
     private void buildAppsPanel(LinearLayout panel) {
@@ -218,30 +247,56 @@ public class MainActivity extends Activity {
         titleRow.addView(copy, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        TextView title = text(getString(R.string.apps_title), 24, TEXT, Typeface.BOLD);
+        TextView title = text(getString(R.string.apps_title), 23, TEXT, Typeface.BOLD);
         copy.addView(title);
 
         TextView subtitle = text(getString(R.string.apps_subtitle), 14, MUTED, Typeface.NORMAL);
-        subtitle.setPadding(0, dp(6), 0, 0);
+        subtitle.setSingleLine(true);
+        subtitle.setEllipsize(TextUtils.TruncateAt.END);
+        subtitle.setPadding(0, dp(4), 0, 0);
         copy.addView(subtitle);
 
-        selectedCount = text("", 14, BACKGROUND, Typeface.BOLD);
-        selectedCount.setGravity(Gravity.CENTER);
-        selectedCount.setPadding(dp(18), dp(10), dp(18), dp(10));
-        setRoundedBackground(selectedCount, AMBER, AMBER, dp(999), 0);
+        selectedCount = badge("");
         titleRow.addView(selectedCount, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         appsGrid = new GridView(this);
-        appsGrid.setNumColumns(3);
-        appsGrid.setHorizontalSpacing(dp(14));
-        appsGrid.setVerticalSpacing(dp(14));
-        appsGrid.setPadding(0, dp(22), 0, 0);
+        appsGrid.setNumColumns(4);
+        appsGrid.setHorizontalSpacing(dp(12));
+        appsGrid.setVerticalSpacing(dp(12));
+        appsGrid.setPadding(0, dp(18), 0, dp(2));
         appsGrid.setClipToPadding(false);
         appsGrid.setSelector(android.R.color.transparent);
         appsGrid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         appsGrid.setGravity(Gravity.TOP);
+        appsGrid.setFocusable(true);
+        appsGrid.setFocusableInTouchMode(false);
+        appsGrid.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         appsGrid.setOnItemClickListener(this::onAppClicked);
+        appsGrid.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                if (appAdapter != null) {
+                    appAdapter.notifyDataSetChanged();
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                if (appAdapter != null) {
+                    appAdapter.notifyDataSetChanged();
+                }
+            }
+        });
+        appsGrid.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus && appsGrid.getSelectedItemPosition() == AdapterView.INVALID_POSITION
+                    && appAdapter != null && appAdapter.getCount() > 0) {
+                appsGrid.setSelection(0);
+            }
+            if (appAdapter != null) {
+                appAdapter.notifyDataSetChanged();
+            }
+        });
         panel.addView(appsGrid, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
     }
@@ -257,6 +312,9 @@ public class MainActivity extends Activity {
         entries.sort(Comparator.comparing(app -> app.label.toLowerCase(Locale.getDefault())));
         appAdapter = new AppGridAdapter(entries);
         appsGrid.setAdapter(appAdapter);
+        if (!entries.isEmpty()) {
+            appsGrid.setSelection(0);
+        }
         refreshSelectionCount();
     }
 
@@ -275,6 +333,10 @@ public class MainActivity extends Activity {
             if (getPackageName().equals(packageName) || out.containsKey(packageName)) {
                 continue;
             }
+            ApplicationInfo appInfo = resolveInfo.activityInfo.applicationInfo;
+            if (appInfo == null || isSystemApp(appInfo)) {
+                continue;
+            }
             CharSequence label = resolveInfo.loadLabel(packageManager);
             out.put(packageName, new AppEntry(
                     label == null ? packageName : label.toString(),
@@ -282,6 +344,11 @@ public class MainActivity extends Activity {
                     resolveInfo.loadIcon(packageManager),
                     selectedPackages.contains(packageName)));
         }
+    }
+
+    private boolean isSystemApp(ApplicationInfo appInfo) {
+        int systemFlags = ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP;
+        return (appInfo.flags & systemFlags) != 0;
     }
 
     private void onAppClicked(AdapterView<?> parent, View view, int position, long id) {
@@ -295,21 +362,68 @@ public class MainActivity extends Activity {
     private void refreshRequirementState() {
         boolean accessibilityEnabled = isAccessibilityServiceEnabled();
         boolean overlayEnabled = WakeKeeper.hasOverlayPermission(this);
-        boolean ready = accessibilityEnabled && overlayEnabled;
+        setupReady = accessibilityEnabled && overlayEnabled;
 
-        setupPanel.setVisibility(ready ? View.GONE : View.VISIBLE);
-        statusBadge.setText(getString(ready ? R.string.status_ready : R.string.status_setup_needed));
-        setRoundedBackground(statusBadge, ready ? TEAL : AMBER, ready ? TEAL : AMBER, dp(999), 0);
+        setupScreen.setVisibility(setupReady ? View.GONE : View.VISIBLE);
+        mainScreen.setVisibility(setupReady ? View.VISIBLE : View.GONE);
+
+        statusBadge.setText(getString(setupReady ? R.string.status_ready : R.string.status_setup_needed));
+        setBadgeColor(statusBadge, setupReady ? TEAL : AMBER);
 
         accessibilityStatus.setText(getString(accessibilityEnabled
                 ? R.string.accessibility_granted
                 : R.string.accessibility_missing));
         accessibilityStatus.setTextColor(accessibilityEnabled ? TEAL : AMBER);
+        accessibilityButton.setVisibility(accessibilityEnabled ? View.GONE : View.VISIBLE);
 
         overlayStatus.setText(getString(overlayEnabled
                 ? R.string.overlay_granted
                 : R.string.overlay_missing));
         overlayStatus.setTextColor(overlayEnabled ? TEAL : AMBER);
+        overlayButton.setVisibility(overlayEnabled ? View.GONE : View.VISIBLE);
+
+        if (setupReady) {
+            focusAppsGridIfNeeded();
+        } else {
+            focusSetupAction(accessibilityEnabled, overlayEnabled);
+        }
+    }
+
+    private void focusSetupAction(boolean accessibilityEnabled, boolean overlayEnabled) {
+        View target = !accessibilityEnabled ? accessibilityButton : (!overlayEnabled ? overlayButton : null);
+        if (target != null) {
+            target.post(target::requestFocus);
+        }
+    }
+
+    private void focusAppsGridIfNeeded() {
+        View currentFocus = getCurrentFocus();
+        if (currentFocus == null || isDescendantOf(setupScreen, currentFocus)) {
+            appsGrid.post(() -> {
+                if (appAdapter != null && appAdapter.getCount() > 0
+                        && appsGrid.getSelectedItemPosition() == AdapterView.INVALID_POSITION) {
+                    appsGrid.setSelection(0);
+                }
+                appsGrid.requestFocus();
+            });
+        }
+    }
+
+    private boolean isDescendantOf(ViewGroup parent, View child) {
+        if (child == null) {
+            return false;
+        }
+        View current = child;
+        while (current != null) {
+            if (current == parent) {
+                return true;
+            }
+            if (!(current.getParent() instanceof View)) {
+                return false;
+            }
+            current = (View) current.getParent();
+        }
+        return false;
     }
 
     private boolean isAccessibilityServiceEnabled() {
@@ -342,6 +456,7 @@ public class MainActivity extends Activity {
             }
         }
         selectedCount.setText(getString(R.string.selected_count, count));
+        setBadgeColor(selectedCount, count > 0 ? TEAL : AMBER);
     }
 
     private void checkForUpdates(boolean userInitiated) {
@@ -362,11 +477,8 @@ public class MainActivity extends Activity {
                 availableRelease = releaseInfo;
                 StringBuilder message = new StringBuilder(
                         getString(R.string.update_available, releaseInfo.tagName));
-                if (!releaseInfo.body.trim().isEmpty()) {
-                    message.append("\n").append(releaseInfo.body.trim());
-                }
                 if (releaseInfo.apkUrl.isEmpty()) {
-                    message.append("\n").append(getString(R.string.apk_asset_missing));
+                    message.append(" · ").append(getString(R.string.apk_asset_missing));
                 }
                 updateStatus.setText(message.toString());
                 updateStatus.setTextColor(TEXT);
@@ -444,7 +556,7 @@ public class MainActivity extends Activity {
     private LinearLayout panel() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(22), dp(20), dp(22), dp(20));
+        panel.setPadding(dp(20), dp(18), dp(20), dp(18));
         setRoundedBackground(panel, PANEL, Color.TRANSPARENT, dp(8), 0);
         return panel;
     }
@@ -457,6 +569,19 @@ public class MainActivity extends Activity {
         textView.setTypeface(Typeface.DEFAULT, style);
         textView.setIncludeFontPadding(true);
         return textView;
+    }
+
+    private TextView badge(String value) {
+        TextView badge = text(value, 13, BACKGROUND, Typeface.BOLD);
+        badge.setGravity(Gravity.CENTER);
+        badge.setPadding(dp(16), dp(8), dp(16), dp(8));
+        setBadgeColor(badge, AMBER);
+        return badge;
+    }
+
+    private void setBadgeColor(TextView badge, int color) {
+        badge.setTextColor(BACKGROUND);
+        setRoundedBackground(badge, color, color, dp(999), 0);
     }
 
     private TextView actionButton(String value, boolean primary) {
@@ -528,9 +653,11 @@ public class MainActivity extends Activity {
             } else {
                 tile = new AppTileView(parent.getContext());
                 tile.setLayoutParams(new GridView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(132)));
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(116)));
             }
-            tile.bind(entries.get(position));
+            boolean highlighted = appsGrid.hasFocus()
+                    && position == appsGrid.getSelectedItemPosition();
+            tile.bind(entries.get(position), highlighted);
             return tile;
         }
     }
@@ -540,55 +667,55 @@ public class MainActivity extends Activity {
         private final TextView label;
         private final TextView packageName;
         private AppEntry entry;
+        private boolean highlighted;
 
         AppTileView(android.content.Context context) {
             super(context);
             setOrientation(HORIZONTAL);
             setGravity(Gravity.CENTER_VERTICAL);
-            setPadding(dp(16), dp(16), dp(16), dp(16));
-            setFocusable(true);
-            setClickable(true);
+            setPadding(dp(14), dp(14), dp(14), dp(14));
+            setFocusable(false);
+            setClickable(false);
 
             icon = new ImageView(context);
             icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            addView(icon, new LinearLayout.LayoutParams(dp(58), dp(58)));
+            addView(icon, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
             LinearLayout copy = new LinearLayout(context);
             copy.setOrientation(VERTICAL);
-            copy.setPadding(dp(14), 0, 0, 0);
+            copy.setPadding(dp(12), 0, 0, 0);
             addView(copy, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-            label = text("", 16, TEXT, Typeface.BOLD);
+            label = text("", 15, TEXT, Typeface.BOLD);
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
             copy.addView(label);
 
-            packageName = text("", 12, MUTED, Typeface.NORMAL);
+            packageName = text("", 11, MUTED, Typeface.NORMAL);
             packageName.setSingleLine(true);
             packageName.setEllipsize(TextUtils.TruncateAt.END);
-            packageName.setPadding(0, dp(6), 0, 0);
+            packageName.setPadding(0, dp(4), 0, 0);
             copy.addView(packageName);
-
-            setOnFocusChangeListener((v, hasFocus) -> paintTile(hasFocus));
         }
 
-        void bind(AppEntry entry) {
+        void bind(AppEntry entry, boolean highlighted) {
             this.entry = entry;
+            this.highlighted = highlighted;
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
             packageName.setText(entry.packageName);
-            paintTile(isFocused());
+            paintTile();
         }
 
-        private void paintTile(boolean focused) {
+        private void paintTile() {
             if (entry == null) {
                 return;
             }
             int fill = entry.selected ? Color.rgb(14, 47, 45) : PANEL_ALT;
             int stroke = entry.selected ? TEAL : Color.rgb(43, 59, 66);
             int strokeWidth = entry.selected ? dp(2) : dp(1);
-            if (focused) {
+            if (highlighted) {
                 fill = entry.selected ? Color.rgb(24, 70, 65) : Color.rgb(35, 51, 59);
                 stroke = AMBER;
                 strokeWidth = dp(2);
