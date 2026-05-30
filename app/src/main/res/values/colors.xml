@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="app_background">#071013</color>
+    <color name="panel_background">#111A20</color>
+    <color name="panel_background_alt">#17242B</color>
+    <color name="text_primary">#F4FAF8</color>
+    <color name="text_secondary">#A8B6B8</color>
+    <color name="accent_teal">#2DE0C2</color>
+    <color name="accent_amber">#FFC44D</color>
+    <color name="danger">#FF6B6B</color>
+    <color name="icon_background">#0B1014</color>
+</resources>

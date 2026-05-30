@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NoSleep!</string>
+    <string name="app_full_name">NoSleep! (Always keep screen awake)</string>
+    <string name="tagline">Keep selected Android TV apps awake while you watch.</string>
+    <string name="status_ready">Protection is ready</string>
+    <string name="status_setup_needed">Setup required</string>
+    <string name="status_active">Awake guard is active</string>
+    <string name="setup_title">One-time setup</string>
+    <string name="setup_body">Enable the accessibility service and overlay permission so NoSleep can detect selected apps and keep the screen awake.</string>
+    <string name="open_accessibility">Open accessibility settings</string>
+    <string name="open_overlay">Open overlay settings</string>
+    <string name="accessibility_granted">Accessibility service enabled</string>
+    <string name="accessibility_missing">Accessibility service is off</string>
+    <string name="overlay_granted">Overlay permission enabled</string>
+    <string name="overlay_missing">Overlay permission is off</string>
+    <string name="apps_title">Protected apps</string>
+    <string name="apps_subtitle">Choose the apps where the TV must stay awake.</string>
+    <string name="apps_empty">No launchable TV apps found.</string>
+    <string name="selected_count">%1$d selected</string>
+    <string name="updates_title">Updates</string>
+    <string name="check_updates">Check updates</string>
+    <string name="checking_updates">Checking for updates...</string>
+    <string name="no_updates">You are on the latest version.</string>
+    <string name="no_releases">No public release has been published yet.</string>
+    <string name="update_check_failed">Could not check updates right now.</string>
+    <string name="update_available">Update available: %1$s</string>
+    <string name="install_update">Download and install</string>
+    <string name="allow_installs">Allow installs</string>
+    <string name="downloading_update">Downloading update...</string>
+    <string name="download_progress">Downloading update: %1$d%%</string>
+    <string name="download_failed">Could not download the update.</string>
+    <string name="install_permission_needed">Allow NoSleep to install APK updates, then return here.</string>
+    <string name="manual_release">Open release page</string>
+    <string name="last_event_waiting">Waiting for a selected app.</string>
+    <string name="last_event_enabled">Keeping screen awake for %1$s.</string>
+    <string name="last_event_disabled">Awake guard is idle.</string>
+    <string name="apk_asset_missing">The latest release does not include an APK asset.</string>
+    <string name="accessibility_service_name">NoSleep app monitor</string>
+    <string name="accessibility_description">Detects the foreground app and keeps the TV screen awake for apps selected in NoSleep.</string>
+</resources>

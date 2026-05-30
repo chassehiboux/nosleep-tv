@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NoSleep!</string>
+    <string name="app_full_name">NoSleep! (Always keep screen awake)</string>
+    <string name="tagline">Не даёт телевизору уснуть в выбранных приложениях.</string>
+    <string name="status_ready">Защита готова</string>
+    <string name="status_setup_needed">Нужна настройка</string>
+    <string name="status_active">Защита от сна включена</string>
+    <string name="setup_title">Настройка один раз</string>
+    <string name="setup_body">Включите службу специальных возможностей и разрешение поверх других окон, чтобы NoSleep видел выбранные приложения и удерживал экран включённым.</string>
+    <string name="open_accessibility">Открыть спец. возможности</string>
+    <string name="open_overlay">Открыть разрешение поверх окон</string>
+    <string name="accessibility_granted">Служба включена</string>
+    <string name="accessibility_missing">Служба выключена</string>
+    <string name="overlay_granted">Разрешение поверх окон включено</string>
+    <string name="overlay_missing">Разрешение поверх окон выключено</string>
+    <string name="apps_title">Защищённые приложения</string>
+    <string name="apps_subtitle">Выберите приложения, в которых телевизор не должен засыпать.</string>
+    <string name="apps_empty">Приложения для запуска не найдены.</string>
+    <string name="selected_count">Выбрано: %1$d</string>
+    <string name="updates_title">Обновления</string>
+    <string name="check_updates">Проверить обновления</string>
+    <string name="checking_updates">Проверяю обновления...</string>
+    <string name="no_updates">Установлена последняя версия.</string>
+    <string name="no_releases">Публичный релиз ещё не опубликован.</string>
+    <string name="update_check_failed">Не удалось проверить обновления сейчас.</string>
+    <string name="update_available">Доступно обновление: %1$s</string>
+    <string name="install_update">Скачать и установить</string>
+    <string name="allow_installs">Разрешить установку</string>
+    <string name="downloading_update">Скачиваю обновление...</string>
+    <string name="download_progress">Скачиваю обновление: %1$d%%</string>
+    <string name="download_failed">Не удалось скачать обновление.</string>
+    <string name="install_permission_needed">Разрешите NoSleep устанавливать APK-обновления, затем вернитесь сюда.</string>
+    <string name="manual_release">Открыть страницу релиза</string>
+    <string name="last_event_waiting">Жду выбранное приложение.</string>
+    <string name="last_event_enabled">Удерживаю экран для %1$s.</string>
+    <string name="last_event_disabled">Защита сейчас не активна.</string>
+    <string name="apk_asset_missing">В последнем релизе нет APK-файла.</string>
+    <string name="accessibility_service_name">Монитор приложений NoSleep</string>
+    <string name="accessibility_description">Определяет активное приложение и удерживает экран телевизора включённым для приложений, выбранных в NoSleep.</string>
+</resources>
