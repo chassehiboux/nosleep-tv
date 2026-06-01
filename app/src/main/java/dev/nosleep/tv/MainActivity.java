@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -46,6 +47,7 @@ public class MainActivity extends Activity {
 
     private LinearLayout setupScreen;
     private LinearLayout mainScreen;
+    private FrameLayout appSettingsScreen;
     private TextView statusBadge;
     private TextView accessibilityStatus;
     private TextView overlayStatus;
@@ -57,6 +59,15 @@ public class MainActivity extends Activity {
     private TextView releasePageButton;
     private GridView appsGrid;
     private AppGridAdapter appAdapter;
+    private ImageView appSettingsIcon;
+    private TextView appSettingsTitle;
+    private TextView appSettingsPackageName;
+    private SettingRow keepAwakeRow;
+    private SettingRow backgroundUnloadRow;
+    private LinearLayout intervalContainer;
+    private TextView appSettingsDoneButton;
+    private final List<SettingRow> intervalRows = new ArrayList<>();
+    private AppEntry editingEntry;
     private UpdateChecker.ReleaseInfo availableRelease;
     private boolean updateCheckRunning;
     private boolean setupReady;
@@ -75,6 +86,17 @@ public class MainActivity extends Activity {
         refreshRequirementState();
         refreshSelectionCount();
         checkForUpdates(false);
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK
+                && appSettingsScreen != null
+                && appSettingsScreen.getVisibility() == View.VISIBLE) {
+            closeAppSettings();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
 
     private void buildUi() {
@@ -99,6 +121,17 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
         buildSetupScreen(setupScreen);
+
+        appSettingsScreen = new FrameLayout(this);
+        appSettingsScreen.setVisibility(View.GONE);
+        appSettingsScreen.setFocusable(true);
+        appSettingsScreen.setClickable(true);
+        appSettingsScreen.setBackgroundColor(Color.argb(210, 2, 7, 9));
+        root.addView(appSettingsScreen, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        buildAppSettingsScreen(appSettingsScreen);
     }
 
     private void buildMainScreen(LinearLayout root) {
@@ -214,6 +247,74 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(54)));
     }
 
+    private void buildAppSettingsScreen(FrameLayout root) {
+        LinearLayout card = panel();
+        card.setPadding(dp(24), dp(22), dp(24), dp(22));
+        int cardWidth = Math.min(dp(760),
+                Math.max(dp(560), getResources().getDisplayMetrics().widthPixels - dp(96)));
+        FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
+                cardWidth, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        root.addView(card, cardParams);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        card.addView(titleRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        appSettingsIcon = new ImageView(this);
+        appSettingsIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        titleRow.addView(appSettingsIcon, new LinearLayout.LayoutParams(dp(58), dp(58)));
+
+        LinearLayout copy = new LinearLayout(this);
+        copy.setOrientation(LinearLayout.VERTICAL);
+        copy.setPadding(dp(16), 0, 0, 0);
+        titleRow.addView(copy, new LinearLayout.LayoutParams(0,
+                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        appSettingsTitle = text("", 24, TEXT, Typeface.BOLD);
+        appSettingsTitle.setSingleLine(true);
+        appSettingsTitle.setEllipsize(TextUtils.TruncateAt.END);
+        copy.addView(appSettingsTitle);
+
+        appSettingsPackageName = text("", 12, MUTED, Typeface.NORMAL);
+        appSettingsPackageName.setSingleLine(true);
+        appSettingsPackageName.setEllipsize(TextUtils.TruncateAt.END);
+        appSettingsPackageName.setPadding(0, dp(3), 0, 0);
+        copy.addView(appSettingsPackageName);
+
+        keepAwakeRow = new SettingRow(this);
+        keepAwakeRow.setOnClickListener(v -> toggleKeepAwakeForEditingApp());
+        addVerticalControl(card, keepAwakeRow, 58, 20);
+
+        backgroundUnloadRow = new SettingRow(this);
+        backgroundUnloadRow.setOnClickListener(v -> toggleBackgroundUnloadForEditingApp());
+        addVerticalControl(card, backgroundUnloadRow, 58, 8);
+
+        intervalContainer = new LinearLayout(this);
+        intervalContainer.setOrientation(LinearLayout.VERTICAL);
+        TextView intervalTitle = text(getString(R.string.background_unload_interval_title),
+                13, MUTED, Typeface.BOLD);
+        intervalTitle.setPadding(dp(4), dp(12), 0, dp(2));
+        intervalContainer.addView(intervalTitle, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        for (long intervalMs : Prefs.getBackgroundUnloadIntervalsMs()) {
+            SettingRow intervalRow = new SettingRow(this);
+            intervalRow.setCompact(true);
+            intervalRow.setOnClickListener(v -> setBackgroundUnloadIntervalForEditingApp(intervalMs));
+            intervalRows.add(intervalRow);
+            addVerticalControl(intervalContainer, intervalRow, 48, 7);
+        }
+        card.addView(intervalContainer, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        appSettingsDoneButton = actionButton(getString(R.string.app_settings_done), true);
+        lockHorizontalFocus(appSettingsDoneButton);
+        appSettingsDoneButton.setOnClickListener(v -> closeAppSettings());
+        addVerticalControl(card, appSettingsDoneButton, 52, 14);
+    }
+
     private void buildUpdatesBar(LinearLayout bar) {
         updateStatus = text(getString(R.string.checking_updates), 13, MUTED, Typeface.NORMAL);
         updateStatus.setSingleLine(true);
@@ -303,10 +404,13 @@ public class MainActivity extends Activity {
 
     private void loadApps() {
         PackageManager packageManager = getPackageManager();
-        Set<String> selectedPackages = Prefs.getSelectedPackages(this);
+        Set<String> keepAwakePackages = Prefs.getKeepAwakePackages(this);
+        Set<String> backgroundUnloadPackages = Prefs.getBackgroundUnloadPackages(this);
         Map<String, AppEntry> apps = new LinkedHashMap<>();
-        collectApps(packageManager, Intent.CATEGORY_LEANBACK_LAUNCHER, selectedPackages, apps);
-        collectApps(packageManager, Intent.CATEGORY_LAUNCHER, selectedPackages, apps);
+        collectApps(packageManager, Intent.CATEGORY_LEANBACK_LAUNCHER,
+                keepAwakePackages, backgroundUnloadPackages, apps);
+        collectApps(packageManager, Intent.CATEGORY_LAUNCHER,
+                keepAwakePackages, backgroundUnloadPackages, apps);
 
         List<AppEntry> entries = new ArrayList<>(apps.values());
         entries.sort(Comparator.comparing(app -> app.label.toLowerCase(Locale.getDefault())));
@@ -320,7 +424,8 @@ public class MainActivity extends Activity {
 
     private void collectApps(PackageManager packageManager,
                              String category,
-                             Set<String> selectedPackages,
+                             Set<String> keepAwakePackages,
+                             Set<String> backgroundUnloadPackages,
                              Map<String, AppEntry> out) {
         Intent intent = new Intent(Intent.ACTION_MAIN);
         intent.addCategory(category);
@@ -342,7 +447,9 @@ public class MainActivity extends Activity {
                     label == null ? packageName : label.toString(),
                     packageName,
                     resolveInfo.loadIcon(packageManager),
-                    selectedPackages.contains(packageName)));
+                    keepAwakePackages.contains(packageName),
+                    backgroundUnloadPackages.contains(packageName),
+                    Prefs.getBackgroundUnloadIntervalMs(this, packageName)));
         }
     }
 
@@ -353,10 +460,119 @@ public class MainActivity extends Activity {
 
     private void onAppClicked(AdapterView<?> parent, View view, int position, long id) {
         AppEntry entry = (AppEntry) appAdapter.getItem(position);
-        entry.selected = !entry.selected;
-        Prefs.setPackageSelected(this, entry.packageName, entry.selected);
-        appAdapter.notifyDataSetChanged();
+        openAppSettings(entry);
+    }
+
+    private void openAppSettings(AppEntry entry) {
+        editingEntry = entry;
+        appSettingsIcon.setImageDrawable(entry.icon);
+        appSettingsTitle.setText(entry.label);
+        appSettingsPackageName.setText(entry.packageName);
+        appSettingsScreen.setVisibility(View.VISIBLE);
+        refreshAppSettingsRows(false);
+        keepAwakeRow.post(keepAwakeRow::requestFocus);
+    }
+
+    private void closeAppSettings() {
+        appSettingsScreen.setVisibility(View.GONE);
+        editingEntry = null;
+        if (appAdapter != null) {
+            appAdapter.notifyDataSetChanged();
+        }
         refreshSelectionCount();
+        appsGrid.post(appsGrid::requestFocus);
+    }
+
+    private void toggleKeepAwakeForEditingApp() {
+        if (editingEntry == null) {
+            return;
+        }
+        editingEntry.keepAwakeEnabled = !editingEntry.keepAwakeEnabled;
+        Prefs.setKeepAwakeEnabled(this, editingEntry.packageName, editingEntry.keepAwakeEnabled);
+        refreshAppSettingsRows(false);
+    }
+
+    private void toggleBackgroundUnloadForEditingApp() {
+        if (editingEntry == null) {
+            return;
+        }
+        editingEntry.backgroundUnloadEnabled = !editingEntry.backgroundUnloadEnabled;
+        if (editingEntry.backgroundUnloadEnabled) {
+            editingEntry.backgroundUnloadIntervalMs = Prefs.getBackgroundUnloadIntervalMs(
+                    this, editingEntry.packageName);
+            Prefs.setBackgroundUnloadIntervalMs(
+                    this, editingEntry.packageName, editingEntry.backgroundUnloadIntervalMs);
+        }
+        Prefs.setBackgroundUnloadEnabled(
+                this, editingEntry.packageName, editingEntry.backgroundUnloadEnabled);
+        refreshAppSettingsRows(editingEntry.backgroundUnloadEnabled);
+    }
+
+    private void setBackgroundUnloadIntervalForEditingApp(long intervalMs) {
+        if (editingEntry == null) {
+            return;
+        }
+        editingEntry.backgroundUnloadIntervalMs = intervalMs;
+        Prefs.setBackgroundUnloadIntervalMs(this, editingEntry.packageName, intervalMs);
+        refreshAppSettingsRows(false);
+    }
+
+    private void refreshAppSettingsRows(boolean focusSelectedInterval) {
+        if (editingEntry == null) {
+            return;
+        }
+        keepAwakeRow.bind(
+                getString(R.string.keep_awake_setting),
+                getString(editingEntry.keepAwakeEnabled ? R.string.toggle_on : R.string.toggle_off),
+                editingEntry.keepAwakeEnabled);
+        backgroundUnloadRow.bind(
+                getString(R.string.background_unload_setting),
+                getString(editingEntry.backgroundUnloadEnabled ? R.string.toggle_on : R.string.toggle_off),
+                editingEntry.backgroundUnloadEnabled);
+
+        intervalContainer.setVisibility(editingEntry.backgroundUnloadEnabled ? View.VISIBLE : View.GONE);
+        long[] intervalsMs = Prefs.getBackgroundUnloadIntervalsMs();
+        SettingRow selectedIntervalRow = null;
+        for (int i = 0; i < intervalsMs.length && i < intervalRows.size(); i++) {
+            long intervalMs = intervalsMs[i];
+            boolean selected = intervalMs == editingEntry.backgroundUnloadIntervalMs;
+            SettingRow row = intervalRows.get(i);
+            row.bind(formatBackgroundUnloadInterval(intervalMs),
+                    selected ? getString(R.string.interval_selected) : "",
+                    selected);
+            if (selected) {
+                selectedIntervalRow = row;
+            }
+        }
+
+        if (appAdapter != null) {
+            appAdapter.notifyDataSetChanged();
+        }
+        refreshSelectionCount();
+
+        final SettingRow rowToFocus = selectedIntervalRow;
+        if (focusSelectedInterval && rowToFocus != null) {
+            rowToFocus.post(rowToFocus::requestFocus);
+        }
+    }
+
+    private String formatBackgroundUnloadInterval(long intervalMs) {
+        if (intervalMs == Prefs.FIFTEEN_MINUTES_MS) {
+            return getString(R.string.interval_15_minutes);
+        }
+        if (intervalMs == Prefs.THIRTY_MINUTES_MS) {
+            return getString(R.string.interval_30_minutes);
+        }
+        if (intervalMs == Prefs.TWO_HOURS_MS) {
+            return getString(R.string.interval_2_hours);
+        }
+        if (intervalMs == Prefs.FOUR_HOURS_MS) {
+            return getString(R.string.interval_4_hours);
+        }
+        if (intervalMs == Prefs.EIGHT_HOURS_MS) {
+            return getString(R.string.interval_8_hours);
+        }
+        return getString(R.string.interval_1_hour);
     }
 
     private void refreshRequirementState() {
@@ -382,10 +598,10 @@ public class MainActivity extends Activity {
         overlayStatus.setTextColor(overlayEnabled ? TEAL : AMBER);
         overlayButton.setVisibility(overlayEnabled ? View.GONE : View.VISIBLE);
 
-        if (setupReady) {
-            focusAppsGridIfNeeded();
-        } else {
+        if (!setupReady) {
             focusSetupAction(accessibilityEnabled, overlayEnabled);
+        } else if (appSettingsScreen.getVisibility() != View.VISIBLE) {
+            focusAppsGridIfNeeded();
         }
     }
 
@@ -450,7 +666,7 @@ public class MainActivity extends Activity {
         int count = 0;
         if (appAdapter != null) {
             for (AppEntry entry : appAdapter.entries) {
-                if (entry.selected) {
+                if (entry.hasAnySettings()) {
                     count++;
                 }
             }
@@ -561,6 +777,13 @@ public class MainActivity extends Activity {
         return panel;
     }
 
+    private void addVerticalControl(LinearLayout parent, View view, int heightDp, int topMarginDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(heightDp));
+        params.setMargins(0, dp(topMarginDp), 0, 0);
+        parent.addView(view, params);
+    }
+
     private TextView text(String value, int sp, int color, int style) {
         TextView textView = new TextView(this);
         textView.setText(value);
@@ -597,6 +820,14 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private void lockHorizontalFocus(View view) {
+        if (view.getId() == View.NO_ID) {
+            view.setId(View.generateViewId());
+        }
+        view.setNextFocusLeftId(view.getId());
+        view.setNextFocusRightId(view.getId());
+    }
+
     private void paintActionButton(TextView button, boolean primary, boolean focused) {
         int fill = primary ? TEAL : PANEL_ALT;
         int stroke = focused ? AMBER : (primary ? TEAL : Color.rgb(49, 68, 76));
@@ -621,6 +852,75 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private final class SettingRow extends LinearLayout {
+        private final TextView title;
+        private final TextView value;
+        private boolean active;
+        private boolean focused;
+        private boolean compact;
+
+        SettingRow(android.content.Context context) {
+            super(context);
+            setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setPadding(dp(16), 0, dp(14), 0);
+            setFocusable(true);
+            setClickable(true);
+            lockHorizontalFocus(this);
+
+            title = text("", 15, TEXT, Typeface.BOLD);
+            title.setSingleLine(true);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            addView(title, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            value = text("", 13, MUTED, Typeface.BOLD);
+            value.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+            value.setSingleLine(true);
+            value.setEllipsize(TextUtils.TruncateAt.END);
+            value.setMinWidth(dp(100));
+            addView(value, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            setOnFocusChangeListener((v, hasFocus) -> {
+                focused = hasFocus;
+                paint();
+            });
+            paint();
+        }
+
+        void setCompact(boolean compact) {
+            this.compact = compact;
+            title.setTextSize(compact ? 14 : 15);
+            value.setTextSize(compact ? 12 : 13);
+            setPadding(dp(compact ? 14 : 16), 0, dp(14), 0);
+            paint();
+        }
+
+        void bind(String titleText, String valueText, boolean active) {
+            title.setText(titleText);
+            value.setText(valueText);
+            value.setVisibility(valueText.isEmpty() ? INVISIBLE : VISIBLE);
+            this.active = active;
+            paint();
+        }
+
+        private void paint() {
+            int fill = active ? Color.rgb(14, 47, 45) : PANEL_ALT;
+            int stroke = active ? TEAL : Color.rgb(43, 59, 66);
+            int strokeWidth = active ? dp(2) : dp(1);
+            if (focused) {
+                fill = active ? Color.rgb(24, 70, 65) : Color.rgb(35, 51, 59);
+                stroke = AMBER;
+                strokeWidth = dp(2);
+            }
+            title.setTextColor(focused ? TEXT : (active ? TEXT : Color.rgb(220, 232, 231)));
+            value.setTextColor(active ? TEAL : MUTED);
+            setRoundedBackground(this, fill, stroke, dp(8), strokeWidth);
+        }
     }
 
     private final class AppGridAdapter extends BaseAdapter {
@@ -653,7 +953,7 @@ public class MainActivity extends Activity {
             } else {
                 tile = new AppTileView(parent.getContext());
                 tile.setLayoutParams(new GridView.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, dp(116)));
+                        ViewGroup.LayoutParams.MATCH_PARENT, dp(126)));
             }
             boolean highlighted = appsGrid.hasFocus()
                     && position == appsGrid.getSelectedItemPosition();
@@ -666,6 +966,7 @@ public class MainActivity extends Activity {
         private final ImageView icon;
         private final TextView label;
         private final TextView packageName;
+        private final TextView status;
         private AppEntry entry;
         private boolean highlighted;
 
@@ -697,6 +998,12 @@ public class MainActivity extends Activity {
             packageName.setEllipsize(TextUtils.TruncateAt.END);
             packageName.setPadding(0, dp(4), 0, 0);
             copy.addView(packageName);
+
+            status = text("", 11, TEAL, Typeface.BOLD);
+            status.setSingleLine(true);
+            status.setEllipsize(TextUtils.TruncateAt.END);
+            status.setPadding(0, dp(5), 0, 0);
+            copy.addView(status);
         }
 
         void bind(AppEntry entry, boolean highlighted) {
@@ -705,18 +1012,36 @@ public class MainActivity extends Activity {
             icon.setImageDrawable(entry.icon);
             label.setText(entry.label);
             packageName.setText(entry.packageName);
+            status.setText(buildTileStatus(entry));
+            status.setVisibility(entry.hasAnySettings() ? VISIBLE : GONE);
             paintTile();
+        }
+
+        private String buildTileStatus(AppEntry entry) {
+            StringBuilder builder = new StringBuilder();
+            if (entry.keepAwakeEnabled) {
+                builder.append(getString(R.string.keep_awake_short));
+            }
+            if (entry.backgroundUnloadEnabled) {
+                if (builder.length() > 0) {
+                    builder.append(" · ");
+                }
+                builder.append(getString(R.string.background_unload_short,
+                        formatBackgroundUnloadInterval(entry.backgroundUnloadIntervalMs)));
+            }
+            return builder.toString();
         }
 
         private void paintTile() {
             if (entry == null) {
                 return;
             }
-            int fill = entry.selected ? Color.rgb(14, 47, 45) : PANEL_ALT;
-            int stroke = entry.selected ? TEAL : Color.rgb(43, 59, 66);
-            int strokeWidth = entry.selected ? dp(2) : dp(1);
+            boolean configured = entry.hasAnySettings();
+            int fill = configured ? Color.rgb(14, 47, 45) : PANEL_ALT;
+            int stroke = configured ? TEAL : Color.rgb(43, 59, 66);
+            int strokeWidth = configured ? dp(2) : dp(1);
             if (highlighted) {
-                fill = entry.selected ? Color.rgb(24, 70, 65) : Color.rgb(35, 51, 59);
+                fill = configured ? Color.rgb(24, 70, 65) : Color.rgb(35, 51, 59);
                 stroke = AMBER;
                 strokeWidth = dp(2);
             }

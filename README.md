@@ -8,7 +8,8 @@ It was built for cases where a video app keeps playing but Android TV still star
 
 - Android TV first interface with remote-friendly focus states.
 - English and Russian localization, selected automatically from the TV language.
-- App whitelist with installed TV apps and icons.
+- Per-app settings for keeping the screen awake and softly unloading apps from memory after they stay in the background.
+- Background unload intervals: 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, or 8 hours.
 - Accessibility service foreground-app detection.
 - Invisible keep-awake overlay plus screen wake lock while protected apps are active.
 - In-app setup checks for required permissions.
@@ -21,7 +22,9 @@ Install the release APK manually on Android TV. On first launch, NoSleep! will s
 - enable the NoSleep accessibility service;
 - allow display over other apps.
 
-After that, choose the apps that should keep the screen awake.
+After that, open an app from the list and choose whether it should keep the screen awake, unload from the background, or both.
+
+Background unload uses Android's normal `killBackgroundProcesses` API. It is a soft memory unload, not a root-level force stop, so Android may restart an app if that app schedules its own background work.
 
 ## Updates
 

@@ -2,11 +2,21 @@ package dev.nosleep.tv;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.ActivityManager;
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.accessibility.AccessibilityEvent;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class AppMonitorAccessibilityService extends AccessibilityService {
     private final WakeKeeper wakeKeeper = new WakeKeeper();
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Map<String, Runnable> pendingBackgroundUnloads = new HashMap<>();
     private String guardedPackage;
+    private String foregroundPackage;
 
     @Override
     protected void onServiceConnected() {
@@ -25,17 +35,7 @@ public class AppMonitorAccessibilityService extends AccessibilityService {
             return;
         }
 
-        String packageName = event.getPackageName().toString();
-        if (packageName.equals(getPackageName())) {
-            setGuardedPackage(null);
-            return;
-        }
-
-        if (Prefs.isPackageSelected(this, packageName)) {
-            setGuardedPackage(packageName);
-        } else {
-            setGuardedPackage(null);
-        }
+        setForegroundPackage(event.getPackageName().toString());
     }
 
     @Override
@@ -46,7 +46,77 @@ public class AppMonitorAccessibilityService extends AccessibilityService {
     @Override
     public void onDestroy() {
         setGuardedPackage(null);
+        clearPendingBackgroundUnloads();
         super.onDestroy();
+    }
+
+    private void setForegroundPackage(String packageName) {
+        if (packageName.equals(foregroundPackage)) {
+            updateWakeGuard(packageName);
+            return;
+        }
+
+        String previousPackage = foregroundPackage;
+        foregroundPackage = packageName;
+        cancelBackgroundUnload(packageName);
+
+        if (previousPackage != null && !previousPackage.equals(packageName)) {
+            scheduleBackgroundUnloadIfNeeded(previousPackage);
+        }
+
+        updateWakeGuard(packageName);
+    }
+
+    private void updateWakeGuard(String packageName) {
+        if (packageName.equals(getPackageName())) {
+            setGuardedPackage(null);
+            return;
+        }
+
+        if (Prefs.isKeepAwakeEnabled(this, packageName)) {
+            setGuardedPackage(packageName);
+        } else {
+            setGuardedPackage(null);
+        }
+    }
+
+    private void scheduleBackgroundUnloadIfNeeded(String packageName) {
+        if (packageName.equals(getPackageName())
+                || !Prefs.isBackgroundUnloadEnabled(this, packageName)) {
+            cancelBackgroundUnload(packageName);
+            return;
+        }
+
+        cancelBackgroundUnload(packageName);
+        long intervalMs = Prefs.getBackgroundUnloadIntervalMs(this, packageName);
+        Runnable task = () -> {
+            pendingBackgroundUnloads.remove(packageName);
+            if (packageName.equals(foregroundPackage)
+                    || !Prefs.isBackgroundUnloadEnabled(this, packageName)) {
+                return;
+            }
+            ActivityManager activityManager =
+                    (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+            if (activityManager != null) {
+                activityManager.killBackgroundProcesses(packageName);
+            }
+        };
+        pendingBackgroundUnloads.put(packageName, task);
+        handler.postDelayed(task, intervalMs);
+    }
+
+    private void cancelBackgroundUnload(String packageName) {
+        Runnable task = pendingBackgroundUnloads.remove(packageName);
+        if (task != null) {
+            handler.removeCallbacks(task);
+        }
+    }
+
+    private void clearPendingBackgroundUnloads() {
+        for (Runnable task : pendingBackgroundUnloads.values()) {
+            handler.removeCallbacks(task);
+        }
+        pendingBackgroundUnloads.clear();
     }
 
     private void setGuardedPackage(String packageName) {
