@@ -35,6 +35,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+import rikka.shizuku.Shizuku;
+
 public class MainActivity extends Activity {
     private static final int BACKGROUND = Color.rgb(7, 16, 19);
     private static final int PANEL = Color.rgb(17, 26, 32);
@@ -64,20 +66,41 @@ public class MainActivity extends Activity {
     private TextView appSettingsPackageName;
     private SettingRow keepAwakeRow;
     private SettingRow backgroundUnloadRow;
+    private SettingRow shizukuAccessRow;
     private LinearLayout intervalContainer;
     private TextView appSettingsDoneButton;
     private final List<SettingRow> intervalRows = new ArrayList<>();
     private AppEntry editingEntry;
     private UpdateChecker.ReleaseInfo availableRelease;
     private boolean updateCheckRunning;
+    private boolean shizukuDownloadRunning;
+    private boolean pendingBackgroundStopEnable;
     private boolean setupReady;
+
+    private final Shizuku.OnBinderReceivedListener shizukuBinderReceivedListener =
+            this::refreshVisibleShizukuState;
+    private final Shizuku.OnBinderDeadListener shizukuBinderDeadListener =
+            this::refreshVisibleShizukuState;
+    private final Shizuku.OnRequestPermissionResultListener shizukuPermissionResultListener =
+            this::onShizukuPermissionResult;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         requestWindowFeature(Window.FEATURE_NO_TITLE);
+        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceivedListener);
+        Shizuku.addBinderDeadListener(shizukuBinderDeadListener);
+        Shizuku.addRequestPermissionResultListener(shizukuPermissionResultListener);
         buildUi();
         loadApps();
+    }
+
+    @Override
+    protected void onDestroy() {
+        Shizuku.removeBinderReceivedListener(shizukuBinderReceivedListener);
+        Shizuku.removeBinderDeadListener(shizukuBinderDeadListener);
+        Shizuku.removeRequestPermissionResultListener(shizukuPermissionResultListener);
+        super.onDestroy();
     }
 
     @Override
@@ -249,7 +272,7 @@ public class MainActivity extends Activity {
 
     private void buildAppSettingsScreen(FrameLayout root) {
         LinearLayout card = panel();
-        card.setPadding(dp(24), dp(22), dp(24), dp(22));
+        card.setPadding(dp(20), dp(16), dp(20), dp(16));
         int cardWidth = Math.min(dp(760),
                 Math.max(dp(560), getResources().getDisplayMetrics().widthPixels - dp(96)));
         FrameLayout.LayoutParams cardParams = new FrameLayout.LayoutParams(
@@ -264,7 +287,7 @@ public class MainActivity extends Activity {
 
         appSettingsIcon = new ImageView(this);
         appSettingsIcon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        titleRow.addView(appSettingsIcon, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        titleRow.addView(appSettingsIcon, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         LinearLayout copy = new LinearLayout(this);
         copy.setOrientation(LinearLayout.VERTICAL);
@@ -285,17 +308,22 @@ public class MainActivity extends Activity {
 
         keepAwakeRow = new SettingRow(this);
         keepAwakeRow.setOnClickListener(v -> toggleKeepAwakeForEditingApp());
-        addVerticalControl(card, keepAwakeRow, 58, 20);
+        addVerticalControl(card, keepAwakeRow, 52, 16);
 
         backgroundUnloadRow = new SettingRow(this);
         backgroundUnloadRow.setOnClickListener(v -> toggleBackgroundUnloadForEditingApp());
-        addVerticalControl(card, backgroundUnloadRow, 58, 8);
+        addVerticalControl(card, backgroundUnloadRow, 52, 7);
+
+        shizukuAccessRow = new SettingRow(this);
+        shizukuAccessRow.setCompact(true);
+        shizukuAccessRow.setOnClickListener(v -> handleShizukuAction());
+        addVerticalControl(card, shizukuAccessRow, 46, 7);
 
         intervalContainer = new LinearLayout(this);
         intervalContainer.setOrientation(LinearLayout.VERTICAL);
         TextView intervalTitle = text(getString(R.string.background_unload_interval_title),
                 13, MUTED, Typeface.BOLD);
-        intervalTitle.setPadding(dp(4), dp(12), 0, dp(2));
+        intervalTitle.setPadding(dp(4), dp(8), 0, 0);
         intervalContainer.addView(intervalTitle, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -304,7 +332,7 @@ public class MainActivity extends Activity {
             intervalRow.setCompact(true);
             intervalRow.setOnClickListener(v -> setBackgroundUnloadIntervalForEditingApp(intervalMs));
             intervalRows.add(intervalRow);
-            addVerticalControl(intervalContainer, intervalRow, 48, 7);
+            addVerticalControl(intervalContainer, intervalRow, 40, 5);
         }
         card.addView(intervalContainer, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -312,7 +340,7 @@ public class MainActivity extends Activity {
         appSettingsDoneButton = actionButton(getString(R.string.app_settings_done), true);
         lockHorizontalFocus(appSettingsDoneButton);
         appSettingsDoneButton.setOnClickListener(v -> closeAppSettings());
-        addVerticalControl(card, appSettingsDoneButton, 52, 14);
+        addVerticalControl(card, appSettingsDoneButton, 48, 10);
     }
 
     private void buildUpdatesBar(LinearLayout bar) {
@@ -476,6 +504,7 @@ public class MainActivity extends Activity {
     private void closeAppSettings() {
         appSettingsScreen.setVisibility(View.GONE);
         editingEntry = null;
+        pendingBackgroundStopEnable = false;
         if (appAdapter != null) {
             appAdapter.notifyDataSetChanged();
         }
@@ -496,8 +525,28 @@ public class MainActivity extends Activity {
         if (editingEntry == null) {
             return;
         }
-        editingEntry.backgroundUnloadEnabled = !editingEntry.backgroundUnloadEnabled;
+
         if (editingEntry.backgroundUnloadEnabled) {
+            pendingBackgroundStopEnable = false;
+            setBackgroundStopEnabledForEditingApp(false, false);
+            return;
+        }
+
+        pendingBackgroundStopEnable = true;
+        if (prepareShizukuForForceStop()) {
+            setBackgroundStopEnabledForEditingApp(true, true);
+        } else {
+            refreshAppSettingsRows(false);
+        }
+    }
+
+    private void setBackgroundStopEnabledForEditingApp(boolean enabled, boolean focusSelectedInterval) {
+        if (editingEntry == null) {
+            return;
+        }
+        pendingBackgroundStopEnable = false;
+        editingEntry.backgroundUnloadEnabled = enabled;
+        if (enabled) {
             editingEntry.backgroundUnloadIntervalMs = Prefs.getBackgroundUnloadIntervalMs(
                     this, editingEntry.packageName);
             Prefs.setBackgroundUnloadIntervalMs(
@@ -505,7 +554,7 @@ public class MainActivity extends Activity {
         }
         Prefs.setBackgroundUnloadEnabled(
                 this, editingEntry.packageName, editingEntry.backgroundUnloadEnabled);
-        refreshAppSettingsRows(editingEntry.backgroundUnloadEnabled);
+        refreshAppSettingsRows(focusSelectedInterval);
     }
 
     private void setBackgroundUnloadIntervalForEditingApp(long intervalMs) {
@@ -529,6 +578,11 @@ public class MainActivity extends Activity {
                 getString(R.string.background_unload_setting),
                 getString(editingEntry.backgroundUnloadEnabled ? R.string.toggle_on : R.string.toggle_off),
                 editingEntry.backgroundUnloadEnabled);
+
+        shizukuAccessRow.bind(
+                getString(R.string.shizuku_access_setting),
+                getShizukuStatusText(),
+                ShizukuForceStopper.hasPermission());
 
         intervalContainer.setVisibility(editingEntry.backgroundUnloadEnabled ? View.VISIBLE : View.GONE);
         long[] intervalsMs = Prefs.getBackgroundUnloadIntervalsMs();
@@ -554,6 +608,128 @@ public class MainActivity extends Activity {
         if (focusSelectedInterval && rowToFocus != null) {
             rowToFocus.post(rowToFocus::requestFocus);
         }
+    }
+
+    private boolean prepareShizukuForForceStop() {
+        if (ShizukuForceStopper.hasPermission()) {
+            return true;
+        }
+        handleShizukuAction();
+        return false;
+    }
+
+    private void handleShizukuAction() {
+        if (shizukuDownloadRunning) {
+            return;
+        }
+        if (ShizukuForceStopper.hasPermission()) {
+            if (ShizukuInstaller.isInstalled(this)) {
+                ShizukuInstaller.openInstalled(this);
+            }
+            refreshVisibleShizukuState();
+            return;
+        }
+        if (!ShizukuInstaller.isInstalled(this)) {
+            installShizuku();
+            return;
+        }
+        if (!ShizukuForceStopper.isAvailable()) {
+            if (!ShizukuInstaller.openInstalled(this)) {
+                ShizukuInstaller.openReleasePage(this);
+            }
+            refreshVisibleShizukuState();
+            return;
+        }
+        ShizukuForceStopper.requestPermissionIfNeeded();
+        refreshVisibleShizukuState();
+    }
+
+    private void installShizuku() {
+        if (!UpdateInstaller.canRequestPackageInstalls(this)) {
+            if (editingEntry != null) {
+                shizukuAccessRow.bind(
+                        getString(R.string.shizuku_access_setting),
+                        getString(R.string.shizuku_allow_installs),
+                        false);
+            }
+            UpdateInstaller.openInstallPermission(this);
+            return;
+        }
+
+        shizukuDownloadRunning = true;
+        refreshVisibleShizukuState();
+        ShizukuInstaller.downloadAndInstall(this, new ShizukuInstaller.Callback() {
+            @Override
+            public void onProgress(int progress) {
+                if (editingEntry != null) {
+                    shizukuAccessRow.bind(
+                            getString(R.string.shizuku_access_setting),
+                            getString(R.string.shizuku_download_progress, progress),
+                            false);
+                }
+            }
+
+            @Override
+            public void onReadyToInstall() {
+                shizukuDownloadRunning = false;
+                refreshVisibleShizukuState();
+            }
+
+            @Override
+            public void onError(Exception exception) {
+                shizukuDownloadRunning = false;
+                if (editingEntry != null) {
+                    shizukuAccessRow.bind(
+                            getString(R.string.shizuku_access_setting),
+                            getString(R.string.shizuku_download_failed),
+                            false);
+                }
+            }
+        });
+    }
+
+    private void onShizukuPermissionResult(int requestCode, int grantResult) {
+        if (requestCode != ShizukuForceStopper.REQUEST_PERMISSION_CODE) {
+            return;
+        }
+        if (grantResult == PackageManager.PERMISSION_GRANTED && pendingBackgroundStopEnable) {
+            setBackgroundStopEnabledForEditingApp(true, true);
+        } else {
+            pendingBackgroundStopEnable = false;
+            refreshVisibleShizukuState();
+        }
+    }
+
+    private void refreshVisibleShizukuState() {
+        if (editingEntry != null) {
+            refreshAppSettingsRows(false);
+        }
+    }
+
+    private String getShizukuStatusText() {
+        if (shizukuDownloadRunning) {
+            return getString(R.string.shizuku_downloading);
+        }
+        if (ShizukuForceStopper.hasPermission()) {
+            int uid = ShizukuForceStopper.getUid();
+            if (uid == 0) {
+                return getString(R.string.shizuku_ready_root);
+            }
+            if (uid == 2000) {
+                return getString(R.string.shizuku_ready_adb);
+            }
+            return getString(R.string.shizuku_ready);
+        }
+        if (!ShizukuInstaller.isInstalled(this)) {
+            return getString(R.string.shizuku_install);
+        }
+        if (!ShizukuForceStopper.isAvailable()) {
+            return getString(R.string.shizuku_start);
+        }
+        if (ShizukuForceStopper.shouldShowPermissionRationale()) {
+            return getString(R.string.shizuku_denied);
+        }
+        return getString(R.string.shizuku_grant);
     }
 
     private String formatBackgroundUnloadInterval(long intervalMs) {

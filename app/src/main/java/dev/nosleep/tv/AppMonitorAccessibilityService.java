@@ -2,16 +2,16 @@ package dev.nosleep.tv;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
-import android.app.ActivityManager;
-import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Log;
 import android.view.accessibility.AccessibilityEvent;
 
 import java.util.HashMap;
 import java.util.Map;
 
 public class AppMonitorAccessibilityService extends AccessibilityService {
+    private static final String TAG = "NoSleepMonitor";
     private final WakeKeeper wakeKeeper = new WakeKeeper();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Runnable> pendingBackgroundUnloads = new HashMap<>();
@@ -95,11 +95,8 @@ public class AppMonitorAccessibilityService extends AccessibilityService {
                     || !Prefs.isBackgroundUnloadEnabled(this, packageName)) {
                 return;
             }
-            ActivityManager activityManager =
-                    (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
-            if (activityManager != null) {
-                activityManager.killBackgroundProcesses(packageName);
-            }
+            ShizukuForceStopper.forceStop(this, packageName, (success, message) ->
+                    Log.i(TAG, "force-stop " + packageName + ": " + success + " (" + message + ")"));
         };
         pendingBackgroundUnloads.put(packageName, task);
         handler.postDelayed(task, intervalMs);

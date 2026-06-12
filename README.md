@@ -8,10 +8,11 @@ It was built for cases where a video app keeps playing but Android TV still star
 
 - Android TV first interface with remote-friendly focus states.
 - English and Russian localization, selected automatically from the TV language.
-- Per-app settings for keeping the screen awake and softly unloading apps from memory after they stay in the background.
-- Background unload intervals: 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, or 8 hours.
+- Per-app settings for keeping the screen awake and force-stopping apps after they stay in the background.
+- Background stop intervals: 15 minutes, 30 minutes, 1 hour, 2 hours, 4 hours, or 8 hours.
 - Accessibility service foreground-app detection.
 - Invisible keep-awake overlay plus screen wake lock while protected apps are active.
+- Shizuku integration for real `cmd activity force-stop` behavior, with in-app Shizuku APK download/install handoff when Shizuku is missing.
 - In-app setup checks for required permissions.
 - GitHub Releases update check with APK download/install prompt.
 
@@ -22,9 +23,9 @@ Install the release APK manually on Android TV. On first launch, NoSleep! will s
 - enable the NoSleep accessibility service;
 - allow display over other apps.
 
-After that, open an app from the list and choose whether it should keep the screen awake, unload from the background, or both.
+After that, open an app from the list and choose whether it should keep the screen awake, stop from the background, or both.
 
-Background unload uses Android's normal `killBackgroundProcesses` API. It is a soft memory unload, not a root-level force stop, so Android may restart an app if that app schedules its own background work.
+Background stop uses Shizuku to run Android's `cmd activity force-stop <package>` command. Shizuku must be installed, running, and allowed for NoSleep. If Shizuku is missing, NoSleep can download the latest official Shizuku APK from GitHub and open Android's installer; Android still requires the user to confirm the install.
 
 ## Updates
 

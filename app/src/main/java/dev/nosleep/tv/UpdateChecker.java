@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 final class UpdateChecker {
     private static final String LATEST_RELEASE_URL =
@@ -99,7 +100,7 @@ final class UpdateChecker {
                 JSONObject asset = assets.getJSONObject(i);
                 String assetName = asset.optString("name", "");
                 String downloadUrl = asset.optString("browser_download_url", "");
-                if (assetName.toLowerCase().endsWith(".apk") && !downloadUrl.isEmpty()) {
+                if (assetName.toLowerCase(Locale.ROOT).endsWith(".apk") && !downloadUrl.isEmpty()) {
                     apkUrl = downloadUrl;
                     break;
                 }
@@ -152,7 +153,7 @@ final class UpdateChecker {
         if (value == null) {
             return "";
         }
-        String normalized = value.trim().toLowerCase();
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
         while (normalized.startsWith("v")) {
             normalized = normalized.substring(1);
         }
